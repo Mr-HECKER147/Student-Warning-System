@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import streamlit as st
-from model import predict_student
+from Model import predict_student
 
 st.set_page_config(page_title="Academic Risk EWS", layout="wide")
 st.title("🚨 Academic Risk Early Warning System")
