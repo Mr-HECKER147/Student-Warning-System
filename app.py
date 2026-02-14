@@ -27,7 +27,7 @@ if st.sidebar.button("🔮 Predict Risk", use_container_width=True):
     
     #with col2:
      #   st.metric("Risk Probability", result['probability'])
-      #  st.info(f"**Reasons:** {', '.join(result['reasons'])}")
+        st.info(f"**Reasons:** {', '.join(result['reasons'])}")
 
 st.sidebar.markdown("""
 ### 📈 Model Stats
