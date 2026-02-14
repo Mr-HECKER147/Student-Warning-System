@@ -86,8 +86,9 @@ Attendance tracking alone catches 65% of cases.
 Live demo ready for faculty use."
 🔗 Setup
 bash
+```
 git clone https://github.com/Mr-HECKER147/Student-Warning-System
 cd Student-Warning-System
 pip install streamlit scikit-learn pandas joblib
 streamlit run app.py
-📚 VAP Alignment
+```
