@@ -25,7 +25,7 @@ At Risk recall: 0.91 ✅
 
 - Python
 - Scikit-learn (Decision Tree)
-- Pandas (400 student dataset)
+- Pandas (Data Handling)
 - Streamlit (Live UI demo)
 - Joblib (Model deployment)
 
