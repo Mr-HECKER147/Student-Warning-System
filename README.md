@@ -27,7 +27,6 @@ At Risk recall: 0.91 ✅
 - Scikit-learn (Decision Tree)
 - Pandas (400 student dataset)
 - Streamlit (Live UI demo)
-- Jupyter (Full pipeline)
 - Joblib (Model deployment)
 
 ## 🚀 Live Demo
@@ -45,7 +44,7 @@ You can expect to see real-time predictions, risk probability, and the top risk 
 
 ## 📚 Dataset
 
-The dataset used in this project consists of 400 students and includes features such as attendance, test scores, and other academic metrics.
+The dataset used in this project consists of 500 students (editable) and includes features such as attendance, test scores, and other academic metrics.
 
 ## 🤝 Contributing
 
