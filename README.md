@@ -3,7 +3,7 @@
  
 *Live Demo: `streamlit run app.py`*
 
-*Link: [text](https://student-warning-system-6wxtgukmjz23rmrl7jt99e.streamlit.app/)*
+*Link: [(https://student-warning-system-6wxtgukmjz23rmrl7jt99e.streamlit.app/)]*
 
 ## 🎯 Problem Statement
 
