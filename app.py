@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import streamlit as st
-from Model import predict_student
+from model import predict_student
 
 st.set_page_config(page_title="Academic Risk EWS", layout="wide")
 st.title("🚨 Academic Risk Early Warning System")
@@ -15,7 +15,7 @@ participation = st.sidebar.slider("Participation (1-5)", 1, 5, 3)
 gpa = st.sidebar.slider("Previous GPA", 4.0, 10.0, 7.5)
 
 if st.sidebar.button("🔮 Predict Risk", use_container_width=True):
-    result = predict_student(attendance, test1, test2, assignments, participation, gpa)
+    result = predict_student(test1, test2,attendance, assignments, participation, gpa)
     
     col1, col2 = st.columns([1, 2])
     with col1:
@@ -25,9 +25,9 @@ if st.sidebar.button("🔮 Predict Risk", use_container_width=True):
         else:
             st.error(result['risk'])
     
-    #with col2:
-     #   st.metric("Risk Probability", result['probability'])
-        st.info(f"**Reasons:** {', '.join(result['reasons'])}")
+    with col2:
+        st.info(f"**Risk Probability:** {result['probability']}")
+        st.info(f"**To improve:** {', '.join(result['reasons'])}")
 
 st.sidebar.markdown("""
 ### 📈 Model Stats
