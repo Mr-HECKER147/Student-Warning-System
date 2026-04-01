@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Model artifacts (regenerate with python Model.py)
+model/
+
+# Data (regenerate with python generate_data.py)
+data/
+student_data.csv
+
+# Environments
+.env
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db

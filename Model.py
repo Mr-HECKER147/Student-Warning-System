@@ -1,13 +1,22 @@
-import pandas as pd
-import numpy as np
+import os
 import json
 import joblib
+import numpy as np
+import pandas as pd
 from datetime import datetime
 
-from sklearn.ensemble import RandomForestClassifier
+from lightgbm import LGBMClassifier, early_stopping, log_evaluation
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+
+try:
+    from imblearn.over_sampling import SMOTE
+    SMOTE_AVAILABLE = True
+except ImportError:
+    SMOTE_AVAILABLE = False
+    print("⚠️  imbalanced-learn not installed. Run: pip install imbalanced-learn")
+    print("   Training without SMOTE oversampling.\n")
 
 try:
     import shap
@@ -20,15 +29,17 @@ except ImportError:
 
 # ── Feature order (must be identical everywhere) ─────────────────────────────
 FEATURES = [
-    'internal_test1',   # /25
-    'internal_test2',   # /25
-    'attendance_pct',   # 0–100
-    'assignments_avg',  # /20
-    'participation',    # 1–5
-    'prev_sem_gpa'      # 0–10
+    'internal_test1',
+    'internal_test2',
+    'attendance_pct',
+    'assignments_avg',
+    'participation',
+    'prev_sem_gpa',
+    'test_avg',
+    'risk_score',
 ]
 
-# ── Thresholds used ONLY as fallback if SHAP is unavailable ──────────────────
+# ── Fallback thresholds if SHAP unavailable ───────────────────────────────────
 THRESHOLDS = {
     'internal_test1':  (12,  "Poor Internal Test 1 score"),
     'internal_test2':  (12,  "Poor Internal Test 2 score"),
@@ -36,6 +47,8 @@ THRESHOLDS = {
     'assignments_avg': (10,  "Poor Assignment scores"),
     'participation':   (3,   "Low Class Participation"),
     'prev_sem_gpa':    (6.0, "Low Previous Semester GPA"),
+    'test_avg':        (12,  "Low average test score"),
+    'risk_score':      (50,  "Overall risk score too low"),
 }
 
 
@@ -44,14 +57,13 @@ THRESHOLDS = {
 # ─────────────────────────────────────────────────────────────────────────────
 
 def validate_inputs(test1, test2, attendance, assignments, participation, gpa):
-    """Raises ValueError if any input is outside its valid range."""
     checks = [
-        (test1,         0, 25,  "Internal Test 1 must be between 0 and 25"),
-        (test2,         0, 25,  "Internal Test 2 must be between 0 and 25"),
-        (attendance,    0, 100, "Attendance must be between 0 and 100"),
-        (assignments,   0, 20,  "Assignments must be between 0 and 20"),
-        (participation, 1, 5,   "Participation must be between 1 and 5"),
-        (gpa,           0, 10,  "GPA must be between 0 and 10"),
+        (test1,         0,  25,  "Internal Test 1 must be 0–25"),
+        (test2,         0,  25,  "Internal Test 2 must be 0–25"),
+        (attendance,    0, 100,  "Attendance must be 0–100"),
+        (assignments,   0,  20,  "Assignments must be 0–20"),
+        (participation, 1,   5,  "Participation must be 1–5"),
+        (gpa,           0,  10,  "GPA must be 0–10"),
     ]
     for value, low, high, msg in checks:
         if not (low <= value <= high):
@@ -63,11 +75,10 @@ def validate_inputs(test1, test2, attendance, assignments, participation, gpa):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def train_risk_model():
-    print("🚀 Training Risk Model...\n")
+    print("🚀 Training Risk Model with LightGBM...\n")
 
     df = pd.read_csv('data/student_data.csv')
 
-    # Verify all required columns exist
     missing = [f for f in FEATURES + ['risk_label'] if f not in df.columns]
     if missing:
         raise ValueError(f"CSV is missing columns: {missing}")
@@ -75,30 +86,42 @@ def train_risk_model():
     X = df[FEATURES]
     y = df['risk_label']
 
-    # ── Train / Test split ────────────────────────────────────────────────────
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42, stratify=y
     )
 
-    # ── Scale ─────────────────────────────────────────────────────────────────
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
-    X_test_scaled  = scaler.transform(X_test)   # fit only on train, transform test
+    X_test_scaled  = scaler.transform(X_test)
 
-    # ── Train Random Forest ───────────────────────────────────────────────────
-    model = RandomForestClassifier(
-        n_estimators=100,
-        max_depth=8,
-        min_samples_leaf=5,
+    # Apply SMOTE to balance classes on training set
+    if SMOTE_AVAILABLE:
+        sm = SMOTE(random_state=42)
+        X_train_scaled, y_train = sm.fit_resample(X_train_scaled, y_train)
+        print(f"✅ SMOTE applied. Training samples: {len(y_train)}")
+
+    model = LGBMClassifier(
+        n_estimators=500,
+        learning_rate=0.05,
+        max_depth=6,
+        num_leaves=31,
+        min_child_samples=10,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        class_weight='balanced',
         random_state=42,
-        class_weight='balanced'   # handles imbalanced at-risk vs safe counts
+        verbose=-1,
     )
-    model.fit(X_train_scaled, y_train)
 
-    # ── Evaluate ──────────────────────────────────────────────────────────────
-    y_pred    = model.predict(X_test_scaled)
-    accuracy  = accuracy_score(y_test, y_pred)
-    cv_scores = cross_val_score(model, scaler.transform(X), y, cv=5)
+    model.fit(
+        X_train_scaled, y_train,
+        eval_set=[(X_test_scaled, y_test)],
+        callbacks=[early_stopping(50, verbose=False), log_evaluation(0)],
+    )
+
+    y_pred   = model.predict(X_test_scaled)
+    accuracy = accuracy_score(y_test, y_pred)
+    cv_scores = cross_val_score(model, scaler.transform(X), y, cv=5, scoring='accuracy')
 
     print(f"✅ Test Accuracy      : {accuracy:.2%}")
     print(f"✅ Cross-Val Accuracy : {cv_scores.mean():.2%} ± {cv_scores.std():.2%}\n")
@@ -107,36 +130,33 @@ def train_risk_model():
     print("🔢 Confusion Matrix:")
     print(confusion_matrix(y_test, y_pred))
 
-    # ── Feature importances (from the model, not manually assigned) ───────────
     importances = model.feature_importances_
-    importance_df = pd.DataFrame({
+    imp_df = pd.DataFrame({
         'Feature':        FEATURES,
         'Importance':     importances,
         'Contribution %': (importances / importances.sum() * 100).round(2)
     }).sort_values('Contribution %', ascending=False)
+    print("\n🏆 Feature Importances:")
+    print(imp_df[['Feature', 'Contribution %']].to_string(index=False))
 
-    print("\n🏆 Real Feature Importances:")
-    print(importance_df[['Feature', 'Contribution %']].to_string(index=False))
-
-    # ── Save model artifacts ──────────────────────────────────────────────────
+    os.makedirs('model', exist_ok=True)
     joblib.dump(model,  'model/risk_model.pkl')
     joblib.dump(scaler, 'model/scaler.pkl')
 
     model_info = {
+        'framework':         'LightGBM',
         'accuracy':          round(accuracy, 4),
         'cv_accuracy_mean':  round(cv_scores.mean(), 4),
         'cv_accuracy_std':   round(cv_scores.std(), 4),
         'trained_on':        datetime.now().strftime('%Y-%m-%d %H:%M'),
-        'training_samples':  len(X_train),
-        'feature_importances': dict(
-            zip(FEATURES, importances.round(4).tolist())
-        )
+        'training_samples':  len(X_train_scaled),
+        'smote_applied':     SMOTE_AVAILABLE,
+        'feature_importances': dict(zip(FEATURES, importances.round(4).tolist()))
     }
-
     with open('model/model_info.json', 'w') as f:
         json.dump(model_info, f, indent=2)
 
-    print("\n✅ Saved: risk_model.pkl, scaler.pkl, model_info.json")
+    print("\n✅ Saved: model/risk_model.pkl, model/scaler.pkl, model/model_info.json")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -144,41 +164,35 @@ def train_risk_model():
 # ─────────────────────────────────────────────────────────────────────────────
 
 def predict_student(test1, test2, attendance, assignments, participation, gpa):
-    """
-    Returns a dict with:
-      - risk:        "AT RISK" or "SAFE"
-      - probability: string like "73.21%"
-      - reasons:     list of human-readable contributing factors
-      - shap_values: raw SHAP values per feature (for charting in app.py)
-    """
-    # 1. Validate
     validate_inputs(test1, test2, attendance, assignments, participation, gpa)
 
-    # 2. Load artifacts
     model  = joblib.load('model/risk_model.pkl')
     scaler = joblib.load('model/scaler.pkl')
 
-    # 3. Build input — order MUST match FEATURES list
-    input_data   = np.array([[test1, test2, attendance, assignments, participation, gpa]])
+    # Build engineered features to match training
+    test_avg   = (test1 + test2) / 2
+    risk_score = (
+        attendance    * 0.35 +
+        test_avg      * 0.30 +
+        gpa           * 0.20 +
+        assignments   * 0.15
+    )
+
+    input_data   = np.array([[test1, test2, attendance, assignments,
+                               participation, gpa, test_avg, risk_score]])
     input_scaled = scaler.transform(input_data)
 
-    # 4. Predict
     risk_prob  = model.predict_proba(input_scaled)[0][1]
     risk_label = "AT RISK" if risk_prob > 0.5 else "SAFE"
 
-    # 5. Explain with SHAP (preferred) or threshold fallback
     reasons     = []
     shap_values = None
 
     if SHAP_AVAILABLE:
         explainer   = shap.TreeExplainer(model)
         shap_output = explainer.shap_values(input_scaled)
-
-        # shap_values for class 1 (AT RISK)
         sv = shap_output[1][0] if isinstance(shap_output, list) else shap_output[0]
         shap_values = dict(zip(FEATURES, sv.tolist()))
-
-        # Top 3 features pushing toward AT RISK (positive SHAP = pushes toward risk)
         sorted_shap = sorted(shap_values.items(), key=lambda x: x[1], reverse=True)
         reasons = [
             f"{feat.replace('_', ' ').title()} is a key risk factor"
@@ -186,7 +200,6 @@ def predict_student(test1, test2, attendance, assignments, participation, gpa):
             if val > 0
         ]
     else:
-        # Fallback: simple threshold checks
         values = {
             'internal_test1':  test1,
             'internal_test2':  test2,
@@ -194,6 +207,8 @@ def predict_student(test1, test2, attendance, assignments, participation, gpa):
             'assignments_avg': assignments,
             'participation':   participation,
             'prev_sem_gpa':    gpa,
+            'test_avg':        test_avg,
+            'risk_score':      risk_score,
         }
         for feat, (threshold, message) in THRESHOLDS.items():
             if values[feat] < threshold:
@@ -206,11 +221,9 @@ def predict_student(test1, test2, attendance, assignments, participation, gpa):
         'risk':        risk_label,
         'probability': f"{risk_prob:.2%}",
         'reasons':     reasons,
-        'shap_values': shap_values   # used by app.py to draw the bar chart
+        'shap_values': shap_values,
     }
 
-
-# ─────────────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     train_risk_model()
