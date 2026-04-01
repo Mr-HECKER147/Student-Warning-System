@@ -286,4 +286,4 @@ def predict_student(test1, test2, attendance, assignments, participation, gpa):
 
 if __name__ == "__main__":
     train_risk_model()
-    predict_student(18, 20, 75, 14, 3, 7.5)
+    
