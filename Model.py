@@ -191,7 +191,19 @@ def predict_student(test1, test2, attendance, assignments, participation, gpa):
     if SHAP_AVAILABLE:
         explainer   = shap.TreeExplainer(model)
         shap_output = explainer.shap_values(input_scaled)
+<<<<<<< HEAD
+
+        # shap_values for class 1 (AT RISK)
+        if isinstance(shap_output, list):
+            # Old format: list of arrays for binary classification
+            sv = shap_output[1][0]
+        else:
+            # New format: 3D array (n_samples, n_features, n_classes)
+            sv = shap_output[0, :, 1]
+
+=======
         sv = shap_output[1][0] if isinstance(shap_output, list) else shap_output[0]
+>>>>>>> 50cb35f25276feb1eb012def2637b2c841719316
         shap_values = dict(zip(FEATURES, sv.tolist()))
         sorted_shap = sorted(shap_values.items(), key=lambda x: x[1], reverse=True)
         reasons = [
@@ -219,6 +231,7 @@ def predict_student(test1, test2, attendance, assignments, participation, gpa):
 
     return {
         'risk':        risk_label,
+        
         'probability': f"{risk_prob:.2%}",
         'reasons':     reasons,
         'shap_values': shap_values,
@@ -227,3 +240,4 @@ def predict_student(test1, test2, attendance, assignments, participation, gpa):
 
 if __name__ == "__main__":
     train_risk_model()
+    predict_student(18, 20, 75, 14, 3, 7.5)
