@@ -7,8 +7,7 @@ from datetime import datetime
 
 from lightgbm import LGBMClassifier, early_stopping, log_evaluation
 from sklearn.model_selection import train_test_split, cross_val_score
-from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, f1_score, roc_auc_score
 
 try:
     from imblearn.over_sampling import SMOTE
@@ -48,7 +47,7 @@ THRESHOLDS = {
     'participation':   (3,   "Low Class Participation"),
     'prev_sem_gpa':    (6.0, "Low Previous Semester GPA"),
     'test_avg':        (12,  "Low average test score"),
-    'risk_score':      (50,  "Overall risk score too low"),
+    'risk_score':      (60,  "Overall risk score too low"),
 }
 
 
@@ -86,77 +85,115 @@ def train_risk_model():
     X = df[FEATURES]
     y = df['risk_label']
 
-    X_train, X_test, y_train, y_test = train_test_split(
+    X_train_val, X_test, y_train_val, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42, stratify=y
     )
-
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_test_scaled  = scaler.transform(X_test)
+    X_train, X_val, y_train, y_val = train_test_split(
+        X_train_val, y_train_val, test_size=0.2, random_state=42, stratify=y_train_val
+    )
 
     # Apply SMOTE to balance classes on training set
     if SMOTE_AVAILABLE:
         sm = SMOTE(random_state=42)
-        X_train_scaled, y_train = sm.fit_resample(X_train_scaled, y_train)
+        X_train, y_train = sm.fit_resample(X_train, y_train)
         print(f"✅ SMOTE applied. Training samples: {len(y_train)}")
 
     model = LGBMClassifier(
-        n_estimators=500,
-        learning_rate=0.05,
-        max_depth=6,
-        num_leaves=31,
-        min_child_samples=10,
-        subsample=0.8,
-        colsample_bytree=0.8,
+        n_estimators=1200,
+        learning_rate=0.03,
+        max_depth=-1,
+        num_leaves=63,
+        min_child_samples=20,
+        subsample=0.9,
+        colsample_bytree=0.9,
+        reg_alpha=0.1,
+        reg_lambda=1.0,
         class_weight='balanced',
         random_state=42,
         verbose=-1,
     )
 
     model.fit(
-        X_train_scaled, y_train,
-        eval_set=[(X_test_scaled, y_test)],
-        callbacks=[early_stopping(50, verbose=False), log_evaluation(0)],
+        X_train, y_train,
+        eval_set=[(X_val, y_val)],
+        eval_metric='auc',
+        callbacks=[early_stopping(100, verbose=False), log_evaluation(0)],
     )
 
-    y_pred   = model.predict(X_test_scaled)
-    accuracy = accuracy_score(y_test, y_pred)
-    cv_scores = cross_val_score(model, scaler.transform(X), y, cv=5, scoring='accuracy')
+    val_probs = model.predict_proba(X_val)[:, 1]
+    thresholds = np.linspace(0.1, 0.9, 81)
+    f1_scores = [f1_score(y_val, (val_probs >= t).astype(int)) for t in thresholds]
+    best_threshold = float(thresholds[int(np.argmax(f1_scores))])
 
-    print(f"✅ Test Accuracy      : {accuracy:.2%}")
-    print(f"✅ Cross-Val Accuracy : {cv_scores.mean():.2%} ± {cv_scores.std():.2%}\n")
-    print("📊 Classification Report:")
+    test_probs = model.predict_proba(X_test)[:, 1]
+    y_pred = (test_probs >= best_threshold).astype(int)
+
+    accuracy = accuracy_score(y_test, y_pred)
+    f1 = f1_score(y_test, y_pred)
+    auc = roc_auc_score(y_test, test_probs)
+    cv_scores = cross_val_score(model, X, y, cv=5, scoring='f1')
+
+    print(f"Test Accuracy      : {accuracy:.2%}")
+    print(f"Test F1 Score      : {f1:.2%}")
+    print(f"Test ROC-AUC       : {auc:.3f}")
+    print(f"Cross-Val F1       : {cv_scores.mean():.2%} +/- {cv_scores.std():.2%}\n")
+    print("Classification Report:")
     print(classification_report(y_test, y_pred, target_names=["SAFE", "AT RISK"]))
-    print("🔢 Confusion Matrix:")
+    print("Confusion Matrix:")
     print(confusion_matrix(y_test, y_pred))
 
-    importances = model.feature_importances_
-    imp_df = pd.DataFrame({
-        'Feature':        FEATURES,
-        'Importance':     importances,
-        'Contribution %': (importances / importances.sum() * 100).round(2)
+    # Feature contribution distribution (more stable than raw gain)
+    contributions = None
+    if SHAP_AVAILABLE:
+        explainer = shap.TreeExplainer(model)
+        shap_output = explainer.shap_values(X_test)
+        if isinstance(shap_output, list):
+            sv = shap_output[1]
+        else:
+            if len(shap_output.shape) == 3:
+                sv = shap_output[:, :, 1]
+            else:
+                sv = shap_output
+        contrib_vals = np.mean(np.abs(sv), axis=0)
+    else:
+        from sklearn.inspection import permutation_importance
+        perm = permutation_importance(model, X_test, y_test, n_repeats=10, random_state=42, scoring='f1')
+        contrib_vals = perm.importances_mean
+
+    if contrib_vals.sum() == 0:
+        contrib_pct = np.zeros_like(contrib_vals)
+    else:
+        contrib_pct = contrib_vals / contrib_vals.sum() * 100
+
+    contributions = dict(zip(FEATURES, contrib_pct.round(2).tolist()))
+    contrib_df = pd.DataFrame({
+        'Feature': FEATURES,
+        'Contribution %': [contributions[f] for f in FEATURES],
     }).sort_values('Contribution %', ascending=False)
-    print("\n🏆 Feature Importances:")
-    print(imp_df[['Feature', 'Contribution %']].to_string(index=False))
+    print("\nFeature Contribution Distribution:")
+    print(contrib_df.to_string(index=False))
+
 
     os.makedirs('model', exist_ok=True)
     joblib.dump(model,  'model/risk_model.pkl')
-    joblib.dump(scaler, 'model/scaler.pkl')
 
     model_info = {
         'framework':         'LightGBM',
         'accuracy':          round(accuracy, 4),
-        'cv_accuracy_mean':  round(cv_scores.mean(), 4),
-        'cv_accuracy_std':   round(cv_scores.std(), 4),
+        'f1':                round(f1, 4),
+        'roc_auc':           round(auc, 4),
+        'cv_f1_mean':        round(cv_scores.mean(), 4),
+        'cv_f1_std':         round(cv_scores.std(), 4),
+        'best_threshold':    round(best_threshold, 4),
         'trained_on':        datetime.now().strftime('%Y-%m-%d %H:%M'),
-        'training_samples':  len(X_train_scaled),
+        'training_samples':  len(X_train),
         'smote_applied':     SMOTE_AVAILABLE,
-        'feature_importances': dict(zip(FEATURES, importances.round(4).tolist()))
+        'feature_contributions': contributions
     }
     with open('model/model_info.json', 'w') as f:
         json.dump(model_info, f, indent=2)
 
-    print("\n✅ Saved: model/risk_model.pkl, model/scaler.pkl, model/model_info.json")
+    print("\nSaved: model/risk_model.pkl, model/model_info.json")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -166,44 +203,53 @@ def train_risk_model():
 def predict_student(test1, test2, attendance, assignments, participation, gpa):
     validate_inputs(test1, test2, attendance, assignments, participation, gpa)
 
-    model  = joblib.load('model/risk_model.pkl')
-    scaler = joblib.load('model/scaler.pkl')
+    model = joblib.load('model/risk_model.pkl')
+    threshold = 0.5
+    try:
+        with open('model/model_info.json', 'r') as f:
+            model_info = json.load(f)
+            threshold = float(model_info.get('best_threshold', 0.5))
+    except Exception:
+        pass
 
     # Build engineered features to match training
     test_avg   = (test1 + test2) / 2
     risk_score = (
-        attendance    * 0.35 +
-        test_avg      * 0.30 +
-        gpa           * 0.20 +
-        assignments   * 0.15
-    )
+        0.18 * (test1 / 25.0) +
+        0.18 * (test2 / 25.0) +
+        0.18 * (assignments / 20.0) +
+        0.18 * (gpa / 10.0) +
+        0.14 * (attendance / 100.0) +
+        0.14 * (participation / 5.0)
+    ) * 100
 
-    input_data   = np.array([[test1, test2, attendance, assignments,
-                               participation, gpa, test_avg, risk_score]])
-    input_scaled = scaler.transform(input_data)
+    input_data = pd.DataFrame([[
+        test1, test2, attendance, assignments,
+        participation, gpa, test_avg, risk_score
+    ]], columns=FEATURES)
 
-    risk_prob  = model.predict_proba(input_scaled)[0][1]
-    risk_label = "AT RISK" if risk_prob > 0.5 else "SAFE"
+    risk_prob  = model.predict_proba(input_data)[0][1]
+    risk_label = "AT RISK" if risk_prob >= threshold else "SAFE"
 
     reasons     = []
     shap_values = None
 
     if SHAP_AVAILABLE:
         explainer   = shap.TreeExplainer(model)
-        shap_output = explainer.shap_values(input_scaled)
-<<<<<<< HEAD
+        shap_output = explainer.shap_values(input_data)
+
 
         # shap_values for class 1 (AT RISK)
         if isinstance(shap_output, list):
             # Old format: list of arrays for binary classification
             sv = shap_output[1][0]
         else:
-            # New format: 3D array (n_samples, n_features, n_classes)
-            sv = shap_output[0, :, 1]
-
-=======
-        sv = shap_output[1][0] if isinstance(shap_output, list) else shap_output[0]
->>>>>>> 50cb35f25276feb1eb012def2637b2c841719316
+            # Newer formats: either (n_samples, n_features, n_classes)
+            # or (n_samples, n_features)
+            if len(shap_output.shape) == 3:
+                sv = shap_output[0, :, 1]
+            else:
+                sv = shap_output[0]
         shap_values = dict(zip(FEATURES, sv.tolist()))
         sorted_shap = sorted(shap_values.items(), key=lambda x: x[1], reverse=True)
         reasons = [

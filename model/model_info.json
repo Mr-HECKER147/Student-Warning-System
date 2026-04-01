@@ -1,0 +1,22 @@
+{
+  "framework": "LightGBM",
+  "accuracy": 0.75,
+  "f1": 0.7573,
+  "roc_auc": 0.8382,
+  "cv_f1_mean": 0.7444,
+  "cv_f1_std": 0.0223,
+  "best_threshold": 0.47,
+  "trained_on": "2026-04-01 15:38",
+  "training_samples": 320,
+  "smote_applied": true,
+  "feature_contributions": {
+    "internal_test1": 4.34,
+    "internal_test2": 5.12,
+    "attendance_pct": 1.51,
+    "assignments_avg": 8.87,
+    "participation": 0.75,
+    "prev_sem_gpa": 6.92,
+    "test_avg": 10.97,
+    "risk_score": 61.51
+  }
+}

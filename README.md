@@ -1,81 +1,66 @@
-# Academic Risk Early Warning System 🚨
+# Academic Risk Early Warning System
 
-*Live Demo: https://student-warning-system-6wxtgukmjz23rmrl7jt99e.streamlit.app/*
+*Live Demo: `streamlit run app.py`*
 
-## 🎯 Problem Statement
+*Link: https://student-warning-system-6wxtgukmjz23rmrl7jt99e.streamlit.app/*
 
-Many students fall behind academically before anyone notices. This system uses attendance, test scores, assignments, participation, and GPA to predict whether a student is **At Risk** or **Safe** — early enough for intervention.
+## Problem Statement
 
-## 📊 Key Results
+The Academic Risk Early Warning System predicts whether students are at risk of academic failure early in their academic journey. It uses attendance, test scores, and other academic metrics to make predictions. The goal is to provide early intervention and prevent academic failure.
 
-| Metric | Value |
-|---|---|
-| **Model** | LightGBM |
-| **Dataset** | 2000 students (synthetic) |
-| **SMOTE** | Applied (class balancing) |
-| **Engineered Features** | `test_avg`, `risk_score` |
-| **Explainability** | SHAP values |
+## Key Results
 
-## 🛠 Tech Stack
+The model is trained with a balanced dataset (about 50/50 SAFE vs AT RISK) and uses near-equal weighted academic factors to improve robustness.
 
-- **Python 3.10+**
-- **LightGBM** — gradient boosting classifier
-- **Scikit-learn** — preprocessing, train/test split, cross-validation
-- **imbalanced-learn** — SMOTE oversampling
-- **SHAP** — feature explainability
-- **Streamlit** — live UI
-- **Pandas / NumPy / Matplotlib** — data and visualization
+## Tech Stack
 
-## 🚀 How to Run Locally
+- Python
+- LightGBM (Gradient Boosting)
+- Scikit-learn (Metrics & utilities)
+- Pandas (Data Handling)
+- Streamlit (Live UI demo)
+- Joblib (Model deployment)
+- imbalanced-learn (SMOTE)
+- SHAP (Explainability)
 
+## Live Demo
+
+To run the live demo, follow these steps:
+
+1. Install the project's dependencies:
 ```bash
-# 1. Install dependencies
 pip install -r requirements.txt
+```
 
-# 2. Generate synthetic dataset
+2. Generate or refresh the dataset:
+```bash
 python generate_data.py
+```
 
-# 3. Train the model
-python Model.py
+3. Train the model:
+```bash
+python model.py
+```
 
-# 4. Run the Streamlit app
+4. Run the Streamlit app:
+```bash
 streamlit run app.py
 ```
 
-## 📁 Project Structure
+You can expect to see real-time predictions, risk probability, and the top risk factors highlighted.
 
-```
-Student-Warning-System/
-├── app.py                # Streamlit UI
-├── Model.py              # LightGBM training + prediction
-├── generate_data.py      # Synthetic dataset generator
-├── requirements.txt      # Dependencies
-├── README.md
-├── data/                 # Generated dataset (git-ignored)
-│   └── student_data.csv
-└── model/                # Saved model artifacts (git-ignored)
-    ├── risk_model.pkl
-    ├── scaler.pkl
-    └── model_info.json
-```
+## Dataset
 
-## 🧠 Features Used
+The dataset is synthetic and consists of 500 students (editable). It includes:
+- internal_test1, internal_test2
+- assignments_avg
+- participation
+- prev_sem_gpa
+- attendance_pct
+- engineered features: test_avg, risk_score
 
-| Feature | Description |
-|---|---|
-| `internal_test1` | Internal test 1 score (/25) |
-| `internal_test2` | Internal test 2 score (/25) |
-| `attendance_pct` | Attendance percentage (0–100) |
-| `assignments_avg` | Average assignment score (/20) |
-| `participation` | Class participation score (1–5) |
-| `prev_sem_gpa` | Previous semester GPA (0–10) |
-| `test_avg` | *(engineered)* Mean of test1 + test2 |
-| `risk_score` | *(engineered)* Weighted composite score |
+Labels are generated from a balanced, noisy risk score so SAFE/AT RISK are about 50/50.
 
-## 🤝 Contributing
+## Contributing
 
-Contributions are welcome! Open an issue or submit a pull request.
-
-## 🎓 Credits
-
-ViMEET · Foundations of AI VAP · Feb 2026
+Contributions are welcome! Please open an issue or submit a pull request.
