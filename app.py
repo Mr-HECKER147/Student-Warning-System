@@ -1,193 +1,207 @@
 #!/usr/bin/env python3
 import streamlit as st
+
 from model import predict_student
 
-st.set_page_config(page_title="Academic Risk EWS", layout="wide")
 
-st.markdown("""
+st.set_page_config(page_title="Student Risk Checker", layout="wide")
+
+
+def parse_probability(probability_text: str) -> float:
+    return float(probability_text.replace("%", "")) if probability_text else 0.0
+
+
+def get_status_message(risk_label: str, probability: float) -> tuple[str, str]:
+    if "SAFE" in risk_label:
+        return "On Track", "The student currently looks stable based on the entered details."
+    if probability >= 75:
+        return "Needs Attention", "The student may need support soon because several warning signs are present."
+    return "Needs Attention", "The student shows some warning signs and should be monitored."
+
+
+def build_action_steps(attendance, test1, test2, assignments, participation, gpa):
+    actions = []
+
+    if attendance < 75:
+        actions.append("Improve attendance and try to stay above 75%.")
+    if min(test1, test2) < 15:
+        actions.append("Give extra focus to internal test preparation.")
+    if assignments < 12:
+        actions.append("Complete assignments on time and improve assignment quality.")
+    if participation <= 2:
+        actions.append("Encourage more class participation and engagement.")
+    if gpa < 6.5:
+        actions.append("Provide extra academic support for the coming weeks.")
+
+    if not actions:
+        actions.append("Keep following the current study plan and review progress regularly.")
+
+    return actions[:3]
+
+
+def clean_reasons(reasons):
+    replacements = {
+        "Internal Test1": "Internal Test 1",
+        "Internal Test2": "Internal Test 2",
+        "Prev Sem Gpa": "previous GPA",
+        "Attendance Pct": "attendance",
+        "Assignments Avg": "assignment score",
+        "Participation": "class participation",
+        "Risk Score": "overall performance",
+        "Test Avg": "average test score",
+    }
+
+    cleaned = []
+    for reason in reasons:
+        text = reason
+        for old, new in replacements.items():
+            text = text.replace(old, new)
+        text = text.replace(" is a key risk factor", "")
+        cleaned.append(text.strip())
+
+    if cleaned == ["All indicators are within acceptable range"]:
+        return ["No major warning signs were found."]
+
+    return cleaned
+
+
+st.markdown(
+    """
 <style>
 :root {
-  --ink: #0f172a;
-  --muted: #475569;
-  --panel: #f8fafc;
-  --panel-2: #eef2f7;
-  --accent: #0ea5a6;
-  --accent-2: #2563eb;
-  --danger: #dc2626;
-  --ok: #16a34a;
+    color-scheme: light;
+}
+body, .stApp, .block-container, .main, .css-1l02zno {
+    background: #eef4fb !important;
+    color: #0f2130 !important;
+    font-family: Inter, sans-serif !important;
 }
 
-.app-hero {
-  padding: 18px 20px;
-  border-radius: 16px;
-  background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 40%, #f8fafc 100%);
-  border: 1px solid #e5e7eb;
+/* Page container spacing */
+.block-container {
+    padding-top: 2rem;
+    padding-bottom: 2rem;
+    max-width: 1440px;
 }
 
-.app-hero h1 {
-  margin: 0 0 6px 0;
-  font-size: 28px;
-  color: var(--ink);
+/* Metric cards */
+[data-testid="stMetric"], .css-1v3fvcr, .css-1d391kg, .css-13sdm1f {
+    background: #ffffff !important;
+    border: 1px solid #d7dae0 !important;
+    border-radius: 18px !important;
+    padding: 18px 20px !important;
+    box-shadow: 0 16px 35px rgba(15, 23, 42, 0.08) !important;
 }
 
-.app-hero p {
-  margin: 0;
-  color: var(--muted);
+/* Buttons */
+.stButton>button {
+    background-color: #0f4c81 !important;
+    color: #ffffff !important;
+    border-radius: 12px !important;
+    border: none !important;
+    padding: 0.95rem 1.2rem !important;
+    font-size: 1rem !important;
+    font-weight: 700 !important;
+}
+.stButton>button:hover {
+    background-color: #133f67 !important;
 }
 
-.summary-card {
-  border-radius: 16px;
-  padding: 16px 18px;
-  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
-  border: 1px solid #e5e7eb;
-  box-shadow: 0 8px 30px rgba(15, 23, 42, 0.06);
+/* Headings and text */
+h1, h2, h3, h4, h5, h6, p, label, span, div {
+    color: #0f2130 !important;
 }
 
-.summary-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 12px;
+/* Alerts and info boxes */
+div[data-testid="stInfo"], div[data-testid="stWarning"], div[data-testid="stSuccess"], div[data-testid="stError"] {
+    background-color: rgba(255,255,255,0.94) !important;
+    border: 1px solid rgba(15, 23, 42, 0.12) !important;
+    color: #0f2130 !important;
+}
+div[data-testid="stInfo"] p, div[data-testid="stWarning"] p, div[data-testid="stSuccess"] p, div[data-testid="stError"] p {
+    color: #0f2130 !important;
 }
 
-.summary-tile {
-  padding: 12px;
-  border-radius: 12px;
-  background: var(--panel);
-  border: 1px solid #e5e7eb;
+/* Slider labels and values */
+.css-1v0mbdj input, .css-10trblm, .css-190qc4u {
+    color: #0f2130 !important;
 }
 
-.summary-tile h4 {
-  margin: 0 0 6px 0;
-  font-size: 12px;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-.summary-tile p {
-  margin: 0;
-  font-size: 16px;
-  color: var(--ink);
-  font-weight: 600;
-}
-
-.section-card {
-  padding: 16px;
-  border-radius: 14px;
-  border: 1px solid #e5e7eb;
-  background: #ffffff;
-}
-
-.insights-card {
-  padding: 16px;
-  border-radius: 14px;
-  border: 1px dashed #cbd5f5;
-  background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
-}
-
-.chip {
-  display: inline-block;
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  margin-right: 6px;
-  background: var(--panel-2);
-  border: 1px solid #e5e7eb;
-  color: var(--muted);
+/* Keep text visible around cards */
+section > div > div > div {
+    opacity: 1 !important;
 }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
-st.markdown("""
-<div class="app-hero">
-  <h1>Academic Risk Early Warning System</h1>
-  <p>VAP Capstone | 95% Accuracy | Live Demo</p>
-</div>
-""", unsafe_allow_html=True)
-
-st.divider()
+st.title("Student Risk Checker")
+st.write("Enter the student's current performance details to get a simple and readable summary.")
 
 left, right = st.columns([3, 2], gap="large")
 
 with left:
-    st.markdown("### Enter Student Data")
-    st.markdown("Use the sliders below. When ready, click Predict Risk to get the result.")
+    st.subheader("Student Details")
+    st.caption("Adjust the values below and click `Check Result`.")
 
     with st.form("student_inputs", clear_on_submit=False):
-        st.markdown('<div class="section-card">', unsafe_allow_html=True)
         c1, c2 = st.columns(2, gap="large")
         with c1:
-            attendance = st.slider("Attendance (%)", 40.0, 100.0, 75.0, help="Overall attendance percentage.")
-            test1 = st.slider("Internal Test 1 (/25)", 0.0, 25.0, 18.0)
-            assignments = st.slider("Assignments (/20)", 0.0, 20.0, 14.0)
+            attendance = st.slider("Attendance (%)", 40.0, 100.0, 75.0, format="%.0f")
+            test1 = st.slider("Internal Test 1", 0.0, 25.0, 18.0)
+            assignments = st.slider("Assignments", 0.0, 20.0, 14.0)
         with c2:
-            test2 = st.slider("Internal Test 2 (/25)", 0.0, 25.0, 20.0)
-            participation = st.slider("Participation (1-5)", 1, 5, 3)
+            test2 = st.slider("Internal Test 2", 0.0, 25.0, 20.0)
+            participation = st.slider("Class Participation", 1, 5, 3)
             gpa = st.slider("Previous GPA", 4.0, 10.0, 7.5)
-        st.markdown("</div>", unsafe_allow_html=True)
 
-        submitted = st.form_submit_button("Predict Risk", use_container_width=True)
-
-    summary_reason = "Awaiting prediction"
-    summary_risk = "Not computed"
-    summary_prob = "—"
+        submitted = st.form_submit_button("Check Result", use_container_width=True)
 
     if submitted:
         result = predict_student(test1, test2, attendance, assignments, participation, gpa)
+        probability = parse_probability(result["probability"])
+        short_reasons = clean_reasons(result["reasons"])
+        status_title, status_text = get_status_message(result["risk"], probability)
+        action_steps = build_action_steps(attendance, test1, test2, assignments, participation, gpa)
 
-        summary_risk = result["risk"]
-        summary_prob = result["probability"]
-        summary_reason = ", ".join(result["reasons"])
+        st.divider()
+        st.subheader("Result Summary")
 
-        st.markdown("### Result")
-        if "SAFE" in result["risk"]:
-            st.success(result["risk"])
+        m1, m2 = st.columns(2, gap="large")
+        with m1:
+            st.metric("Current Status", status_title)
+        with m2:
+            st.metric("Risk Chance", result["probability"])
+
+        if status_title == "On Track":
+            st.success(status_text)
         else:
-            st.error(result["risk"])
+            st.warning(status_text)
 
-        st.info(f"Risk Probability: {result['probability']}")
-        st.info(f"To improve: {', '.join(result['reasons'])}")
+        st.write("**What this means**")
+        st.write(status_text)
 
-    st.markdown("### Summary")
-    st.markdown(
-        f"""
-<div class="summary-card">
-  <div class="chip">Prediction Engine v1</div>
-  <div class="chip">Feature Signals</div>
-  <div class="chip">Risk Scoring</div>
-  <div class="summary-grid">
-    <div class="summary-tile">
-      <h4>Risk Status</h4>
-      <p>{summary_risk}</p>
-    </div>
-    <div class="summary-tile">
-      <h4>Probability</h4>
-      <p>{summary_prob}</p>
-    </div>
-    <div class="summary-tile">
-      <h4>Top Drivers</h4>
-      <p>{summary_reason}</p>
-    </div>
-  </div>
-</div>
-""",
-        unsafe_allow_html=True,
-    )
+        st.write("**Main things affecting the result**")
+        for reason in short_reasons:
+            st.write(f"- {reason}")
+
+        st.write("**Suggested next steps**")
+        for step in action_steps:
+            st.write(f"- {step}")
+    else:
+        st.info("Use the sliders above and then click **Check Result** to generate the risk summary.")
 
 with right:
-    st.markdown("### Model Stats")
-    st.markdown("- 95% Accuracy")
-    st.markdown("- Attendance is top driver (~65%)")
-    st.markdown("- Trained with data of 500+ students")
-    st.divider()
-    st.markdown("### Quick Guidance")
-    st.markdown("- Attendance below 70% increases risk.")
-    st.markdown("- Low internal test scores are strong signals.")
-    st.markdown("- Participation and assignments help offset risk.")
-    st.markdown("### System Notes")
-    st.markdown("- Ensemble model with calibrated risk score.")
-    st.markdown("- Inputs normalized and validated in real time.")
-    st.markdown("- Actionable feedback auto-generated per student.")
+    st.subheader("How To Read This")
+    st.success("On Track: the student currently looks stable.")
+    st.warning("Needs Attention: the student may need support.")
+    st.write("A higher Risk Chance means there are more warning signs.")
 
-st.caption("VIMEET | AI Foundation and Its Applications")
+    st.subheader("What Helps Most")
+    st.markdown("- Better attendance\n- Stronger internal test scores\n- Consistent assignment completion\n- Better class participation")
+
+    st.subheader("Tip")
+    st.info("Use this result as a quick support guide, not as a final judgment.")
+
+st.caption("Simple academic risk summary for easier student review.")
