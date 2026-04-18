@@ -96,7 +96,7 @@ body, .stApp, .block-container, .main, .css-1l02zno {
 /* Buttons */
 .stButton>button {
     background-color: #0f4c81 !important;
-    color: #ffffff !important;
+    color: #000000 !important;
     border-radius: 12px !important;
     border: none !important;
     padding: 0.95rem 1.2rem !important;
