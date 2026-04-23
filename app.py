@@ -94,18 +94,34 @@ body, .stApp, .block-container, .main, .css-1l02zno {
 }
 
 /* Buttons */
-.stButton>button {
-    background-color: #0f4c81 !important;
-    color: #000000 !important;
+.stButton > button,
+div[data-testid="stFormSubmitButton"] > button,
+div[data-testid="stFormSubmitButton"] button[kind="primary"] {
+    background-color: #000000 !important;
+    color: #ffffff !important;
     border-radius: 12px !important;
     border: none !important;
     padding: 0.95rem 1.2rem !important;
     font-size: 1rem !important;
     font-weight: 700 !important;
 }
-.stButton>button:hover {
-    background-color: #133f67 !important;
+.stButton > button *,
+div[data-testid="stFormSubmitButton"] > button *,
+div[data-testid="stFormSubmitButton"] button[kind="primary"] * {
+    color: #ffffff !important;
 }
+.stButton > button:hover,
+div[data-testid="stFormSubmitButton"] > button:hover,
+div[data-testid="stFormSubmitButton"] button[kind="primary"]:hover {
+    background-color: #1b1b1b !important;
+    color: #ffffff !important;
+}
+.stButton > button:hover *,
+div[data-testid="stFormSubmitButton"] > button:hover *,
+div[data-testid="stFormSubmitButton"] button[kind="primary"]:hover * {
+    color: #ffffff !important;
+}
+
 
 /* Headings and text */
 h1, h2, h3, h4, h5, h6, p, label, span, div {
@@ -156,7 +172,7 @@ with left:
             participation = st.slider("Class Participation", 1, 5, 3)
             gpa = st.slider("Previous GPA", 4.0, 10.0, 7.5)
 
-        submitted = st.form_submit_button("Check Result", use_container_width=True)
+        submitted = st.form_submit_button("Check Result", use_container_width=True, type="primary")
 
     if submitted:
         result = predict_student(test1, test2, attendance, assignments, participation, gpa)
